@@ -1,0 +1,38 @@
+# Meson
+builddir/
+build/
+subprojects/packagecache/
+
+# Compiled objects
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+
+# Debug / profiling
+*.dSYM/
+*.pdb
+*.prof
+*.gcda
+*.gcno
+*.gcov
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Misc
+*.log
+

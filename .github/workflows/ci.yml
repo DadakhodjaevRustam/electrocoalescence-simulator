@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config g++ python3-pip
+
+      - name: Install a modern version of Meson
+        run: pip install meson==1.10.1
+
+      - name: Configure with Meson (using wrap files)
+        run: |
+          # Удаляем старый кеш, чтобы Meson гарантированно пересоздал подпроект
+          rm -rf subprojects/packagecache/
+          # Принудительно используем wrap-режим, игнорируя системные библиотеки
+          meson setup builddir --wrap-mode=forcefallback
+
+      - name: Build
+        run: meson compile -C builddir
+
+      - name: Test
+        run: meson test -C builddir --print-errorlogs
