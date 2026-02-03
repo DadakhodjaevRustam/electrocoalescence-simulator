@@ -1,5 +1,5 @@
-#include "../include/Octree.h"
-#include "../include/DropletSystem.h"
+#include "acceleration/Octree.h"
+#include "core/DropletSystem.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -69,8 +69,9 @@ void Octree::insertDroplet(OctreeNode* node, int droplet_idx, const Droplet& dro
         node->droplet_indices.push_back(droplet_idx);
         
 
-        if (node->droplet_indices.size() > static_cast<size_t>(max_droplets_per_leaf) 
-            && depth < 20) {
+        // ИСПРАВЛЕНО: Убрано ограничение depth < 20 для поддержки больших систем (1M+ капель)
+        // Единственное ограничение - максимальное количество капель на лист
+        if (node->droplet_indices.size() > static_cast<size_t>(max_droplets_per_leaf)) {
             subdivide(node, system, max_droplets_per_leaf, depth);
         }
     } else {
@@ -245,6 +246,11 @@ bool Octree::shouldOpen(const OctreeNode* node, double dx, double dy, double dz)
     // Критерий: size/distance < theta
     // Вычисляем напрямую через sqrt для точности
     
+    // Применяем периодические граничные условия к разности координат
+    if (use_pbc) {
+        PhysicsConstants::applyPeriodicBoundary(dx, dy, dz, box_lx, box_ly, box_lz);
+    }
+    
     double distance_squared = dx*dx + dy*dy + dz*dz;
     
     // Критическое исправление: при нулевом расстоянии всегда открываем узел
@@ -276,10 +282,16 @@ void Octree::calculateForceOnDroplet(int droplet_idx, const Droplet& droplet,
     double dy = node->center_y - droplet.y;
     double dz = node->center_z - droplet.z;
     
+    // Применяем периодические граничные условия к разности координат для проверки shouldOpen
+    double dx_pbc = dx, dy_pbc = dy, dz_pbc = dz;
+    if (use_pbc) {
+        PhysicsConstants::applyPeriodicBoundary(dx_pbc, dy_pbc, dz_pbc, box_lx, box_ly, box_lz);
+    }
+    
     // Критическое исправление: проверяем shouldOpen до обработки is_leaf
     // Это позволяет аппроксимировать даже листья, если они достаточно далеко
     
-    if (!shouldOpen(node, dx, dy, dz)) {
+    if (!shouldOpen(node, dx_pbc, dy_pbc, dz_pbc)) {
         // Узел достаточно далеко → аппроксимируем ВЕСЬ узел (включая листья)
         
         // Критическое: если узел содержит текущую каплю, нельзя аппроксимировать!

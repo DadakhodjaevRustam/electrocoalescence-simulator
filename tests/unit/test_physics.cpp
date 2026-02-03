@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 
-#include "PhysicsConstants.h"
-#include "ClusterInitializer.h"
-#include "Droplet.h"
-#include "DropletSystem.h"
-#include "Octree.h"
-#include "DipoleForceCalculator.h"
-#include "NaiveForceSolver.h"
+#include "core/PhysicsConstants.h"
+#include "initializers/ClusterInitializer.h"
+#include "core/Droplet.h"
+#include "core/DropletSystem.h"
+#include "acceleration/Octree.h"
+#include "solvers/DipoleForceCalculator.h"
+#include "solvers/NaiveForceSolver.h"
 
 TEST(PhysicsConstantsTest, DipoleConstantMatchesFormula) {
     const double e_field = 3.0e5;

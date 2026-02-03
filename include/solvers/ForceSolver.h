@@ -1,8 +1,8 @@
 #ifndef FORCE_SOLVER_H
 #define FORCE_SOLVER_H
 
-#include "DropletSystem.h"
-#include "DipoleForceCalculator.h"
+#include "core/DropletSystem.h"
+#include "solvers/DipoleForceCalculator.h"
 #include <vector>
 #include <utility>
 

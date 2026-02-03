@@ -1,7 +1,7 @@
 #ifndef NAIVE_FORCE_SOLVER_H
 #define NAIVE_FORCE_SOLVER_H
 
-#include "ForceSolver.h"
+#include "solvers/ForceSolver.h"
 
 /**
  * @brief Наивный O(N²) решатель сил

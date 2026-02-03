@@ -1,7 +1,7 @@
 #ifndef DROPLET_INITIALIZER_H
 #define DROPLET_INITIALIZER_H
 
-#include "DropletSystem.h"
+#include "core/DropletSystem.h"
 #include <random>
 
 /**

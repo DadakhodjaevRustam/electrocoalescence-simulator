@@ -1,11 +1,11 @@
 #ifndef COMPREHENSIVE_EXPERIMENT_H
 #define COMPREHENSIVE_EXPERIMENT_H
 
-#include "DropletSystem.h"
-#include "ClusterInitializer.h"
-#include "NaiveForceSolver.h"
-#include "Octree.h"
-#include "DipoleForceCalculator.h"
+#include "core/DropletSystem.h"
+#include "initializers/ClusterInitializer.h"
+#include "solvers/NaiveForceSolver.h"
+#include "acceleration/Octree.h"
+#include "solvers/DipoleForceCalculator.h"
 #include <vector>
 #include <array>
 #include <chrono>

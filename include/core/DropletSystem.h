@@ -1,7 +1,7 @@
 #ifndef DROPLET_SYSTEM_H
 #define DROPLET_SYSTEM_H
 
-#include "Droplet.h"
+#include "core/Droplet.h"
 #include <vector>
 #include <memory>
 #include <set>
@@ -22,6 +22,30 @@ public:
      */
     DropletSystem(size_t capacity = 1000000);
     ~DropletSystem();
+    
+    /**
+     * @brief Установить размеры бокса для периодических граничных условий
+     * @param lx, ly, lz Размеры бокса в каждом направлении
+     */
+    void setBoxSize(double lx, double ly, double lz);
+    
+    /**
+     * @brief Получить размеры бокса
+     * @return Кортеж (lx, ly, lz)
+     */
+    std::tuple<double, double, double> getBoxSize() const;
+    
+    /**
+     * @brief Включить/выключить периодические граничные условия
+     * @param enable true для включения ПГУ
+     */
+    void enablePeriodicBoundaryConditions(bool enable);
+    
+    /**
+     * @brief Проверить, включены ли ПГУ
+     * @return true если ПГУ включены
+     */
+    bool isPeriodicBoundaryEnabled() const { return use_pbc; }
 
     void getDetailedOctreeStatistics();  // TODO: реализовать подробную статистику октодерева
 
@@ -165,10 +189,16 @@ public:
     void* force_calc;      // Указатель на DipoleForceCalculator
 
     int max_droplets_per_leaf = 16;
+    
+    // Периодические граничные условия
+    bool use_pbc = false;
+    double box_lx = 0.0;
+    double box_ly = 0.0;
+    double box_lz = 0.0;
 };
 
 // Подключаем заголовки после определения класса, чтобы избежать циклических зависимостей
-#include "Octree.h"
-#include "DipoleForceCalculator.h"
+#include "acceleration/Octree.h"
+#include "solvers/DipoleForceCalculator.h"
 
 #endif // DROPLET_SYSTEM_H

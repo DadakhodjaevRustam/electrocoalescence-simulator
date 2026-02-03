@@ -1,7 +1,7 @@
 #ifndef TECHNICAL_PLOTS_H
 #define TECHNICAL_PLOTS_H
 
-#include "ComprehensiveExperiment.h"
+#include "experiments/ComprehensiveExperiment.h"
 #include <vector>
 #include <string>
 

@@ -1,8 +1,8 @@
 #ifndef OCTREE_H
 #define OCTREE_H
 
-#include "OctreeNode.h"
-#include "DipoleForceCalculator.h"
+#include "acceleration/OctreeNode.h"
+#include "solvers/DipoleForceCalculator.h"
 
 // Предварительное объявление для избегания циклической зависимости
 class DropletSystem;
@@ -19,6 +19,18 @@ class Octree {
  public:
     explicit Octree(double theta = 0.5);
     ~Octree() = default;
+    
+    /**
+     * @brief Установить параметры периодических граничных условий
+     * @param enable Включить ПГУ
+     * @param lx, ly, lz Размеры бокса
+     */
+    void setPeriodicBoundary(bool enable, double lx = 0, double ly = 0, double lz = 0) {
+        use_pbc = enable;
+        box_lx = lx;
+        box_ly = ly;
+        box_lz = lz;
+    }
     
     /**
      * @brief Построить дерево из системы капель
@@ -66,6 +78,12 @@ class Octree {
     std::unique_ptr<OctreeNode> root;
     double theta;    // Критерий угла открытия (не в квадрате)
     mutable size_t approximated_interactions = 0;  // Счетчик аппроксимаций
+    
+    // Периодические граничные условия
+    bool use_pbc = false;
+    double box_lx = 0.0;
+    double box_ly = 0.0;
+    double box_lz = 0.0;
     
     // Рекурсивные функции
     void insertDroplet(OctreeNode* node, int droplet_idx, const Droplet& droplet, 

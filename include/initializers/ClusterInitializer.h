@@ -1,7 +1,7 @@
 #ifndef CLUSTER_INITIALIZER_H
 #define CLUSTER_INITIALIZER_H
 
-#include "DropletSystem.h"
+#include "core/DropletSystem.h"
 #include <vector>
 #include <array>
 

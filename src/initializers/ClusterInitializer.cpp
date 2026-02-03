@@ -1,4 +1,4 @@
-#include "../include/ClusterInitializer.h"
+#include "initializers/ClusterInitializer.h"
 #include <random>
 #include <cmath>
 #include <algorithm>

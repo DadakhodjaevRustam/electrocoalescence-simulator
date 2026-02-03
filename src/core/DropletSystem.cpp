@@ -1,7 +1,8 @@
-#include "../include/DropletSystem.h"
-#include "../include/PhysicsConstants.h"
-#include "../include/Octree.h"
-#include "../include/DipoleForceCalculator.h"
+#include "core/DropletSystem.h"
+#include <tuple>
+#include "core/PhysicsConstants.h"
+#include "acceleration/Octree.h"
+#include "solvers/DipoleForceCalculator.h"
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -305,6 +306,10 @@ double DropletSystem::getTotalVolume() const {
  */
 void DropletSystem::calculateDipoleForces() {
     resetForces();
+    
+    // Настраиваем периодические граничные условия в калькуляторе сил и октодереве
+    ((DipoleForceCalculator*)force_calc)->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
+    ((::Octree*)octree)->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
 
     // Строим октодерево (размер корзины определяется max_droplets_per_leaf)
     ((::Octree*)octree)->build(*this, max_droplets_per_leaf);
@@ -344,4 +349,27 @@ std::tuple<size_t, size_t, size_t> DropletSystem::getOctreeStatistics() const {
  */
 bool DropletSystem::wasApproximationUsed() const {
     return ((::Octree*)octree)->wasApproximationUsed();
+}
+
+/**
+ * @brief Установить размеры бокса для периодических граничных условий
+ */
+void DropletSystem::setBoxSize(double lx, double ly, double lz) {
+    box_lx = lx;
+    box_ly = ly;
+    box_lz = lz;
+}
+
+/**
+ * @brief Получить размеры бокса
+ */
+std::tuple<double, double, double> DropletSystem::getBoxSize() const {
+    return std::make_tuple(box_lx, box_ly, box_lz);
+}
+
+/**
+ * @brief Включить/выключить периодические граничные условия
+ */
+void DropletSystem::enablePeriodicBoundaryConditions(bool enable) {
+    use_pbc = enable;
 }

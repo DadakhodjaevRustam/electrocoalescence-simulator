@@ -1,4 +1,4 @@
-#include "../include/NaiveForceSolver.h"
+#include "solvers/NaiveForceSolver.h"
 #include <vector>
 
 /**

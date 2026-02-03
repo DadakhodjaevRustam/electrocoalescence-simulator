@@ -1,8 +1,8 @@
 #ifndef DIPOLE_FORCE_CALCULATOR_H
 #define DIPOLE_FORCE_CALCULATOR_H
 
-#include "Droplet.h"
-#include "PhysicsConstants.h"
+#include "core/Droplet.h"
+#include "core/PhysicsConstants.h"
 #include <array>
 #include <cmath>
 
@@ -17,7 +17,20 @@
  */
 class DipoleForceCalculator {
 public:
-    explicit DipoleForceCalculator(double m_const = PhysicsConstants::getDipoleConstant()) : m_const(m_const) {}
+    explicit DipoleForceCalculator(double m_const = PhysicsConstants::getDipoleConstant()) 
+        : m_const(m_const), use_pbc(false), box_lx(0), box_ly(0), box_lz(0) {}
+    
+    /**
+     * @brief Установить параметры периодических граничных условий
+     * @param enable Включить ПГУ
+     * @param lx, ly, lz Размеры бокса
+     */
+    void setPeriodicBoundary(bool enable, double lx = 0, double ly = 0, double lz = 0) {
+        use_pbc = enable;
+        box_lx = lx;
+        box_ly = ly;
+        box_lz = lz;
+    }
     
     /**
      * @brief Рассчитать дипольную силу между двумя каплями
@@ -30,6 +43,11 @@ public:
         double dx = j.x - i.x;
         double dy = j.y - i.y;
         double dz = j.z - i.z;
+        
+        // Применяем периодические граничные условия, если они включены
+        if (use_pbc) {
+            PhysicsConstants::applyPeriodicBoundary(dx, dy, dz, box_lx, box_ly, box_lz);
+        }
         
         // Расстояние
         double r_squared = dx*dx + dy*dy + dz*dz;
@@ -75,6 +93,11 @@ public:
         double dy = j.y - i.y;
         double dz = j.z - i.z;
         
+        // Применяем периодические граничные условия, если они включены
+        if (use_pbc) {
+            PhysicsConstants::applyPeriodicBoundary(dx, dy, dz, box_lx, box_ly, box_lz);
+        }
+        
         double r_squared = dx*dx + dy*dy + dz*dz;
         double r_mag = std::sqrt(r_squared);
         
@@ -105,6 +128,8 @@ public:
     
 private:
     double m_const; // Физическая константа M
+    bool use_pbc;   // Использовать периодические граничные условия
+    double box_lx, box_ly, box_lz; // Размеры бокса для ПГУ
 };
 
 #endif // DIPOLE_FORCE_CALCULATOR_H

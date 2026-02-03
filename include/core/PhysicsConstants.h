@@ -45,6 +45,26 @@ struct PhysicsConstants {
         return 2.0 * M_PI * radius * eta * (2.0 * eta + 3.0 * eta_w) / (eta + eta_w);
     }
     
+    /**
+     * @brief Применить периодические граничные условия к разности координат
+     * @param dx, dy, dz Разности координат (будут изменены)
+     * @param lx, ly, lz Размеры бокса
+     * 
+     * Вычисляет минимальное расстояние с учетом периодичности (minimum image convention)
+     */
+    static inline void applyPeriodicBoundary(double& dx, double& dy, double& dz,
+                                             double lx, double ly, double lz) {
+        // Применяем minimum image convention для каждой координаты
+        if (lx > 0) {
+            dx = dx - lx * std::round(dx / lx);
+        }
+        if (ly > 0) {
+            dy = dy - ly * std::round(dy / ly);
+        }
+        if (lz > 0) {
+            dz = dz - lz * std::round(dz / lz);
+        }
+    }
 
 };
 

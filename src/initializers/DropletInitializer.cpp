@@ -1,4 +1,4 @@
-#include "../include/DropletInitializer.h"
+#include "initializers/DropletInitializer.h"
 #include <random>
 #include <cmath>
 #include <iostream>
