@@ -39,7 +39,7 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
     std::cout << "Директория результатов: " << config.output_directory << std::endl;
     
     int current_experiment = 0;
-    // TODO: при необходимости объединить вложенные циклы, чтобы снизить расход памяти
+    // Вложенные циклы по параметрам (cluster_size × theta × distance × direction)
     // Основной цикл экспериментов
     for (int cluster_size : config.cluster_sizes) {
         for (double theta : config.theta_values) {
@@ -68,7 +68,7 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
                     
                     // Усредняем результаты повторений
                     ExperimentResult avg_result = repetitions[0];
-                    avg_result.naive_time_ms = 0;
+                    avg_result.honest_time_ms = 0;
                     avg_result.octree_time_ms = 0;
                     avg_result.relative_error = 0;
                     avg_result.angular_error = 0;
@@ -78,7 +78,7 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
                     avg_result.approximated_interactions = 0;
                     
                     for (const auto& rep : repetitions) {
-                        avg_result.naive_time_ms += rep.naive_time_ms;
+                        avg_result.honest_time_ms += rep.honest_time_ms;
                         avg_result.octree_time_ms += rep.octree_time_ms;
                         avg_result.relative_error += rep.relative_error;
                         avg_result.angular_error += rep.angular_error;
@@ -91,7 +91,7 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
                     }
                     
                     int n_reps = config.repetitions_per_config;
-                    avg_result.naive_time_ms /= n_reps;
+                    avg_result.honest_time_ms /= n_reps;
                     avg_result.octree_time_ms /= n_reps;
                     avg_result.relative_error /= n_reps;
                     avg_result.angular_error /= n_reps;
@@ -101,7 +101,7 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
                     avg_result.octree_nodes /= n_reps;
                     avg_result.max_depth /= n_reps;
                     avg_result.approximated_interactions /= n_reps;
-                    avg_result.speedup_factor = avg_result.naive_time_ms / avg_result.octree_time_ms;
+                    avg_result.speedup_factor = avg_result.honest_time_ms / avg_result.octree_time_ms;
                     
                     all_results.push_back(avg_result);
                     
@@ -118,18 +118,18 @@ std::vector<ExperimentResult> ComprehensiveExperimentRunner::runFullStudy(
                             std::ofstream intermediate_file(filename);
                             intermediate_file << std::fixed << std::setprecision(6);
                             intermediate_file << "cluster_size,theta,distance,direction_x,direction_y,direction_z,"
-                                            << "force_magnitude_naive,force_magnitude_octree,relative_error,"
+                                            << "force_magnitude_honest,force_magnitude_octree,relative_error,"
                                             << "angular_error,component_error_x,component_error_y,component_error_z,"
-                                            << "naive_time_ms,octree_time_ms,speedup_factor,was_approximated,"
+                                            << "honest_time_ms,octree_time_ms,speedup_factor,was_approximated,"
                                             << "octree_nodes,max_depth,approximated_interactions,"
                                             << "effective_cluster_radius,cluster_center_x,cluster_center_y,cluster_center_z"
                                             << std::endl;
                             
                             intermediate_file << rep_result.cluster_size << "," << rep_result.theta << "," << rep_result.distance << ","
                                           << rep_result.direction[0] << "," << rep_result.direction[1] << "," << rep_result.direction[2] << ","
-                                          << rep_result.force_magnitude_naive << "," << rep_result.force_magnitude_octree << "," << rep_result.relative_error << ","
+                                          << rep_result.force_magnitude_honest << "," << rep_result.force_magnitude_octree << "," << rep_result.relative_error << ","
                                           << rep_result.angular_error << "," << rep_result.component_errors[0] << "," << rep_result.component_errors[1] << "," << rep_result.component_errors[2] << ","
-                                          << rep_result.naive_time_ms << "," << rep_result.octree_time_ms << "," << rep_result.speedup_factor << ","
+                                          << rep_result.honest_time_ms << "," << rep_result.octree_time_ms << "," << rep_result.speedup_factor << ","
                                           << (rep_result.was_approximated ? 1 : 0) << ","
                                           << rep_result.octree_nodes << "," << rep_result.max_depth << "," << rep_result.approximated_interactions << ","
                                           << rep_result.effective_cluster_radius << "," << rep_result.cluster_center_of_mass[0] << ","
@@ -174,19 +174,19 @@ ExperimentResult ComprehensiveExperimentRunner::runSingleExperiment(
     result.effective_cluster_radius = ClusterInitializer::calculateEffectiveRadius(cluster_droplets);
     result.cluster_center_of_mass = ClusterInitializer::calculateCenterOfMass(cluster_droplets);
     
-    // 1. Точный расчет (Naive)
-    DropletSystem system_naive = system;  // Копируем систему
-    NaiveForceSolver naive_solver;
+    // 1. Точный расчет (Honest)
+    DropletSystem system_honest = system;  // Копируем систему
+    HonestForceSolver honest_solver;
     
-    result.naive_time_ms = measureExecutionTime([&]() {
-        system_naive.resetForces();
-        naive_solver.calculateForces(system_naive, DipoleForceCalculator());
+    result.honest_time_ms = measureExecutionTime([&]() {
+        system_honest.resetForces();
+        honest_solver.calculateForces(system_honest, DipoleForceCalculator());
     });
     
     // Сохраняем точные силы на удаленной капле
-    const Droplet& remote_droplet_naive = system_naive.getDroplets().back();
-    result.force_naive = {remote_droplet_naive.fx, remote_droplet_naive.fy, remote_droplet_naive.fz};
-    result.force_magnitude_naive = calculateForceMagnitude(remote_droplet_naive);
+    const Droplet& remote_droplet_honest = system_honest.getDroplets().back();
+    result.force_honest = {remote_droplet_honest.fx, remote_droplet_honest.fy, remote_droplet_honest.fz};
+    result.force_magnitude_honest = calculateForceMagnitude(remote_droplet_honest);
     
     // 2. Расчет с октодеревом
     DropletSystem system_octree = system;  // Копируем систему
@@ -205,9 +205,9 @@ ExperimentResult ComprehensiveExperimentRunner::runSingleExperiment(
     result.force_magnitude_octree = calculateForceMagnitude(remote_droplet_octree);
     
     // 3. Расчет ошибок
-    result.relative_error = calculateRelativeError(result.force_magnitude_naive, result.force_magnitude_octree);
-    result.angular_error = calculateAngularError(result.force_naive, result.force_octree);
-    result.component_errors = calculateComponentErrors(result.force_naive, result.force_octree);
+    result.relative_error = calculateRelativeError(result.force_magnitude_honest, result.force_magnitude_octree);
+    result.angular_error = calculateAngularError(result.force_honest, result.force_octree);
+    result.component_errors = calculateComponentErrors(result.force_honest, result.force_octree);
     
     // 4. Статистика октодерева
     auto [nodes, depth, approximated] = system_octree.getOctreeStatistics();
@@ -217,7 +217,7 @@ ExperimentResult ComprehensiveExperimentRunner::runSingleExperiment(
     result.was_approximated = system_octree.wasApproximationUsed();
     
     // 5. Ускорение
-    result.speedup_factor = result.naive_time_ms / result.octree_time_ms;
+    result.speedup_factor = result.honest_time_ms / result.octree_time_ms;
     
     return result;
 }
@@ -308,24 +308,3 @@ std::array<double, 3> ComprehensiveExperimentRunner::calculateComponentErrors(
     };
 }
 
-/**
- * @brief Получить статистику октодерева
- */
-std::tuple<size_t, size_t, size_t> ComprehensiveExperimentRunner::getOctreeStatistics(
-    const DropletSystem& system) {
-    
-    (void)system; // Подавляем предупреждение о неиспользуемом параметре
-    // Это потребует добавления методов в класс Octree
-    // Пока возвращаем заглушки
-    return std::make_tuple(0, 0, 0);
-}
-// TODO: убрать заглушки после добавления методов в Octree
-/**
- * @brief Проверить использовалась ли аппроксимация
- */
-bool ComprehensiveExperimentRunner::checkIfApproximationUsed(const DropletSystem& system) {
-    (void)system; // Подавляем предупреждение о неиспользуемом параметре
-    // Это потребует добавления методов в класс Octree
-    // Пока возвращаем заглушку
-    return true;
-}

@@ -1,61 +1,58 @@
 #include "core/DropletSystem.h"
-#include <tuple>
 #include "core/PhysicsConstants.h"
 #include "acceleration/Octree.h"
 #include "solvers/DipoleForceCalculator.h"
+#include "solvers/StokesletCalculator.h"
+#include <numbers>
+#include <tuple>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
 
-/**
- * @brief Конструктор с резервированием памяти
- * @param capacity Максимальное число капель для резервирования памяти
- */
-DropletSystem::DropletSystem(size_t capacity) {
+// ─── Конструкторы / деструктор ─────────────────────────────────────
+
+DropletSystem::DropletSystem(size_t capacity, double theta)
+    : theta(theta),
+      octree(std::make_unique<Octree>(theta)),
+      force_calc(std::make_unique<DipoleForceCalculator>(PhysicsConstants::getDipoleConstant())),
+      stokeslet_calc(std::make_unique<StokesletCalculator>(PhysicsConstants::ETA_OIL))
+{
     droplets.reserve(capacity);
-    
-    // Инициализируем октодерево и калькулятор сил
-    // Значение theta по умолчанию = 0.5, конструктор внутри возведет его в квадрат
-    octree = new ::Octree(0.5);
-    
-    force_calc = new DipoleForceCalculator(PhysicsConstants::getDipoleConstant());
 }
 
-DropletSystem::~DropletSystem() {
-    delete (::Octree*)octree;
-    delete (DipoleForceCalculator*)force_calc;
+DropletSystem::~DropletSystem() = default;
+
+DropletSystem::DropletSystem(const DropletSystem& other)
+    : droplets(other.droplets),
+      theta(other.theta),
+      max_droplets_per_leaf(other.max_droplets_per_leaf),
+      use_pbc(other.use_pbc),
+      box_lx(other.box_lx),
+      box_ly(other.box_ly),
+      box_lz(other.box_lz),
+      use_convection(other.use_convection),
+      octree(std::make_unique<Octree>(other.theta)),
+      force_calc(std::make_unique<DipoleForceCalculator>(PhysicsConstants::getDipoleConstant())),
+      stokeslet_calc(std::make_unique<StokesletCalculator>(PhysicsConstants::ETA_OIL))
+{
 }
 
-void DropletSystem::getDetailedOctreeStatistics() {
-    // TODO: реализовать подробную статистику октодерева
-}
-
-// Конструктор копирования — глубокое копирование
-DropletSystem::DropletSystem(const DropletSystem& other) {
-    droplets = other.droplets;
-    
-    // Создаем новый октодерево и калькулятор сил
-    octree = new ::Octree(0.5);
-    
-    force_calc = new DipoleForceCalculator(PhysicsConstants::getDipoleConstant());
-}
-
-// Оператор копирующего присваивания
 DropletSystem& DropletSystem::operator=(const DropletSystem& other) {
     if (this != &other) {
-        // Очистить существующие ресурсы
-        delete (::Octree*)octree;
-        delete (DipoleForceCalculator*)force_calc;
-        
-        // Копируем капли
         droplets = other.droplets;
+        theta = other.theta;
+        max_droplets_per_leaf = other.max_droplets_per_leaf;
+        use_pbc = other.use_pbc;
+        box_lx = other.box_lx;
+        box_ly = other.box_ly;
+        box_lz = other.box_lz;
+        use_convection = other.use_convection;
         
-        // Создаем новый октодерево и калькулятор сил
-        octree = new ::Octree(0.5);
-        
-        force_calc = new DipoleForceCalculator(PhysicsConstants::getDipoleConstant());
+        octree = std::make_unique<Octree>(other.theta);
+        force_calc = std::make_unique<DipoleForceCalculator>(PhysicsConstants::getDipoleConstant());
+        stokeslet_calc = std::make_unique<StokesletCalculator>(PhysicsConstants::ETA_OIL);
     }
     return *this;
 }
@@ -69,7 +66,6 @@ bool DropletSystem::addDropletObj(const Droplet& droplet) {
     droplets.push_back(droplet);
     return true;
 }
-// TODO: перенести проверку коллизий в отдельный модуль
 /**
  * @brief Проверить коллизию новой капли с существующими
  * @param new_droplet Новая капля для проверки
@@ -114,7 +110,7 @@ void DropletSystem::addDroplet(double x, double y, double z, double radius) {
 }
 
 /**
- * @brief Сбросить аккумуляторы сил и конвективные скорости всех капель
+ * @brief Сбросить аккумуляторы сил всех капель
  * Вызывается в начале каждого шага симуляции
  */
 void DropletSystem::resetForces() {
@@ -124,12 +120,53 @@ void DropletSystem::resetForces() {
 }
 
 /**
+ * @brief Сбросить конвективные скорости всех капель
+ * Вызывается перед расчетом новых конвективных скоростей
+ */
+void DropletSystem::resetConvection() {
+    for (auto& d : droplets) {
+        d.resetConvection();
+    }
+}
+
+/**
+ * @brief Рассчитать конвективные скорости через стокслет
+ * 
+ * Вычисляет гидродинамическое взаимодействие между каплями:
+ * u_i = Σ_j J(r_i - r_j) · F_j
+ * 
+ * где J - тензор стокслета (функция Грина уравнений Стокса).
+ * Должен вызываться после calculateDipoleForces().
+ * 
+ * ВЫБОР МЕТОДА:
+ * - Если use_convection == true: ОКТОДЕРЕВО O(N log N) с аппроксимацией
+ * - Можно вручную вызывать честный метод для точности
+ */
+void DropletSystem::calculateConvectionVelocities() {
+    if (!use_convection) {
+        return;  // Конвекция отключена
+    }
+    
+    resetConvection();
+    
+    // Настраиваем PBC в калькуляторе стокслета
+    stokeslet_calc->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
+    
+    // Октодерево уже построено в calculateDipoleForces(), используем повторно
+    octree->calculateConvectionVelocities(*this, *stokeslet_calc);
+}
+
+/**
  * @brief Обновить позиции капель в режиме сверхвязкой динамики
  * @param dt Шаг времени интегрирования
  *
- * В сверхвязком режиме скорость определяется балансом сил:
- * v = F_dipole / A, где A — коэффициент сопротивления Стокса.
- * Обновление позиции: r(t+dt) = r(t) + v*dt
+ * В сверхвязком режиме полная скорость состоит из двух компонент:
+ * v_total = v_migration + u_convection
+ * где:
+ * - v_migration = F_dipole / A - дрейфовая скорость от дипольных сил
+ * - u_convection - конвективная скорость от гидродинамического взаимодействия
+ * 
+ * Обновление позиции: r(t+dt) = r(t) + v_total*dt
  */
 void DropletSystem::updatePositions(double dt) {
     for (auto& d : droplets) {
@@ -137,15 +174,39 @@ void DropletSystem::updatePositions(double dt) {
         // Используем централизованные физические константы
         double A = PhysicsConstants::getStokesCoefficient(d.radius);
         
-        // Скорость из дипольной силы в сверхвязком режиме
-        double vx_total = d.fx / A;
-        double vy_total = d.fy / A;
-        double vz_total = d.fz / A;
+        // Дрейфовая скорость из дипольной силы в сверхвязком режиме
+        double vx_migration = d.fx / A;
+        double vy_migration = d.fy / A;
+        double vz_migration = d.fz / A;
+        
+        // Полная скорость: дрейфовая + конвективная
+        double vx_total = vx_migration + d.ux;
+        double vy_total = vy_migration + d.uy;
+        double vz_total = vz_migration + d.uz;
         
         // Обновляем позицию методом Эйлера
         d.x += vx_total * dt;
         d.y += vy_total * dt;
         d.z += vz_total * dt;
+        
+        // Wrap позиций при периодических граничных условиях
+        // Капли, вышедшие за границы домена, переносятся на противоположную сторону
+        if (use_pbc) {
+            wrapPosition(d.x, d.y, d.z);
+        }
+    }
+}
+
+void DropletSystem::wrapPosition(double& x, double& y, double& z) const {
+    // Предполагаем домен [-L/2, L/2] для каждой оси
+    if (box_lx > 0) {
+        x = x - box_lx * std::floor(x / box_lx + 0.5);
+    }
+    if (box_ly > 0) {
+        y = y - box_ly * std::floor(y / box_ly + 0.5);
+    }
+    if (box_lz > 0) {
+        z = z - box_lz * std::floor(z / box_lz + 0.5);
     }
 }
 
@@ -284,7 +345,6 @@ size_t DropletSystem::mergeDroplets(const std::vector<std::pair<int, int>>& coll
     
     return removed_count;
 }
-// TODO: уточнить, нужна ли отдельная масса капли кроме объема 
 /**
  * @brief Рассчитать суммарный объем всех капель
  * @return Суммарный объем в единицах³
@@ -298,7 +358,7 @@ double DropletSystem::getTotalVolume() const {
         total += d.radius * d.radius * d.radius;
     }
     // Умножаем на 4π/3, чтобы получить реальный объем
-    return total * 4.0 * M_PI / 3.0;
+    return total * 4.0 * std::numbers::pi / 3.0;
 }
 
 /**
@@ -307,15 +367,13 @@ double DropletSystem::getTotalVolume() const {
 void DropletSystem::calculateDipoleForces() {
     resetForces();
     
-    // Настраиваем периодические граничные условия в калькуляторе сил и октодереве
-    ((DipoleForceCalculator*)force_calc)->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
-    ((::Octree*)octree)->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
+    // Настраиваем PBC
+    force_calc->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
+    octree->setPeriodicBoundary(use_pbc, box_lx, box_ly, box_lz);
 
-    // Строим октодерево (размер корзины определяется max_droplets_per_leaf)
-    ((::Octree*)octree)->build(*this, max_droplets_per_leaf);
-
-    // Рассчитываем силы
-    ((::Octree*)octree)->calculateForces(*this, *(DipoleForceCalculator*)force_calc);
+    // Строим октодерево и рассчитываем силы
+    octree->build(*this, max_droplets_per_leaf);
+    octree->calculateForces(*this, *force_calc);
 }
 
 void DropletSystem::setMaxDropletsPerLeaf(int max_per_leaf) {
@@ -323,32 +381,17 @@ void DropletSystem::setMaxDropletsPerLeaf(int max_per_leaf) {
     max_droplets_per_leaf = std::max(1, max_per_leaf);
 }
 
-/**
- * @brief Задать параметр theta для аппроксимации октодерева
- * @param theta_squared Фактически это theta (не theta²), несмотря на имя
- *                      Конструктор Octree возведет его в квадрат
- */
-void DropletSystem::setOctreeTheta(double theta_squared) {
-    // Несмотря на имя параметра, передаем theta напрямую
-    // Octree сам выполнит возведение в квадрат
-    ((::Octree*)octree)->setTheta(theta_squared);
+void DropletSystem::setOctreeTheta(double new_theta) {
+    theta = new_theta;
+    octree->setTheta(new_theta);
 }
 
-/**
- * @brief Получить статистику октодерева
- */
 std::tuple<size_t, size_t, size_t> DropletSystem::getOctreeStatistics() const {
-    size_t nodes = ((::Octree*)octree)->getNodeCount();
-    size_t depth = ((::Octree*)octree)->getMaxDepth();
-    size_t approximated = ((::Octree*)octree)->getApproximatedInteractions();
-    return std::make_tuple(nodes, depth, approximated);
+    return {octree->getNodeCount(), octree->getMaxDepth(), octree->getApproximatedInteractions()};
 }
 
-/**
- * @brief Проверить, использовалась ли аппроксимация в последнем расчете
- */
 bool DropletSystem::wasApproximationUsed() const {
-    return ((::Octree*)octree)->wasApproximationUsed();
+    return octree->wasApproximationUsed();
 }
 
 /**

@@ -46,6 +46,13 @@ class Octree {
      */
     void calculateForces(DropletSystem& system, const DipoleForceCalculator& calculator);
     
+    /**
+     * @brief Рассчитать конвективные скорости используя дерево
+     * @param system Система капель (конвективные скорости будут накоплены)
+     * @param calculator Калькулятор стокслета
+     */
+    void calculateConvectionVelocities(DropletSystem& system, const class StokesletCalculator& calculator);
+    
     // Очистить дерево
     void clear();
     
@@ -76,8 +83,8 @@ class Octree {
      
  private:
     std::unique_ptr<OctreeNode> root;
-    double theta;    // Критерий угла открытия (не в квадрате)
-    mutable size_t approximated_interactions = 0;  // Счетчик аппроксимаций
+    double theta;    // Критерий Barnes-Hut (единый для сил и конвекции)
+    mutable size_t approximated_interactions = 0;
     
     // Периодические граничные условия
     bool use_pbc = false;
@@ -91,11 +98,26 @@ class Octree {
     void subdivide(OctreeNode* node, const DropletSystem& system, int max_droplets_per_leaf, int depth);
     void computeMassDistribution(OctreeNode* node, const DropletSystem& system);
     
+    /**
+     * @brief Вычислить суммарные силы для узлов дерева (для конвекции)
+     * @param node Узел для обработки
+     * @param system Система капель
+     * 
+     * Должен вызываться ПОСЛЕ calculateDipoleForces()
+     */
+    void computeTotalForces(OctreeNode* node, const DropletSystem& system);
+    
     void calculateForceOnDroplet(int droplet_idx, const Droplet& droplet,
                                   const OctreeNode* node,
                                   const DropletSystem& system,
                                   const DipoleForceCalculator& calculator,
                                   double& fx, double& fy, double& fz) const;
+    
+    void calculateConvectionOnDroplet(int droplet_idx, const Droplet& droplet,
+                                       const OctreeNode* node,
+                                       const DropletSystem& system,
+                                       const class StokesletCalculator& calculator,
+                                       double& ux, double& uy, double& uz) const;
     
     void collectNeighbors(const Droplet& droplet, const OctreeNode* node,
                           const DropletSystem& system, std::vector<int>& neighbors) const;

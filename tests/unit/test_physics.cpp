@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <numbers>
 
 #include "core/PhysicsConstants.h"
 #include "initializers/ClusterInitializer.h"
@@ -6,11 +7,11 @@
 #include "core/DropletSystem.h"
 #include "acceleration/Octree.h"
 #include "solvers/DipoleForceCalculator.h"
-#include "solvers/NaiveForceSolver.h"
+#include "solvers/HonestForceSolver.h"
 
 TEST(PhysicsConstantsTest, DipoleConstantMatchesFormula) {
     const double e_field = 3.0e5;
-    const double expected = 12.0 * M_PI * PhysicsConstants::EPS0
+    const double expected = 12.0 * std::numbers::pi * PhysicsConstants::EPS0
                             * PhysicsConstants::EPS_OIL * e_field * e_field;
     EXPECT_NEAR(PhysicsConstants::getDipoleConstant(e_field), expected, 1e-12);
 }
@@ -19,7 +20,7 @@ TEST(PhysicsConstantsTest, StokesCoefficientMatchesFormula) {
     const double radius = 5.0e-6;
     const double eta = PhysicsConstants::ETA_OIL;
     const double eta_w = PhysicsConstants::ETA_WATER;
-    const double expected = 2.0 * M_PI * radius * eta
+    const double expected = 2.0 * std::numbers::pi * radius * eta
                             * (2.0 * eta + 3.0 * eta_w) / (eta + eta_w);
     EXPECT_NEAR(PhysicsConstants::getStokesCoefficient(radius), expected, 1e-18);
 }
@@ -29,8 +30,8 @@ TEST(ClusterInitializerTest, CalculatesEffectiveRadius) {
     droplets.emplace_back(0.0, 0.0, 0.0, 1.0);
     droplets.emplace_back(0.0, 0.0, 0.0, 2.0);
 
-    const double total_volume = (4.0 / 3.0) * M_PI * (1.0 + 8.0);
-    const double expected = std::pow(3.0 * total_volume / (4.0 * M_PI), 1.0 / 3.0);
+    const double total_volume = (4.0 / 3.0) * std::numbers::pi * (1.0 + 8.0);
+    const double expected = std::cbrt(3.0 * total_volume / (4.0 * std::numbers::pi));
 
     EXPECT_NEAR(ClusterInitializer::calculateEffectiveRadius(droplets), expected, 1e-12);
 }
@@ -117,13 +118,13 @@ TEST(DropletSystemTest, MergesDropletsAndPreservesVolume) {
     EXPECT_NEAR(merged_volume, expected_volume, 1e-12);
 }
 
-TEST(NaiveForceSolverTest, ConservesMomentumForTwoDroplets) {
+TEST(HonestForceSolverTest, ConservesMomentumForTwoDroplets) {
     DropletSystem system;
     system.addDroplet(-1.0, 0.0, 0.0, 1.0);
     system.addDroplet(1.0, 0.0, 0.0, 1.0);
 
     DipoleForceCalculator calculator(PhysicsConstants::getDipoleConstant());
-    NaiveForceSolver solver;
+    HonestForceSolver solver;
     solver.calculateForces(system, calculator);
 
     const auto& d0 = system[0];

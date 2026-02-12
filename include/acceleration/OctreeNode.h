@@ -30,6 +30,9 @@ struct OctreeNode {
     // r_eff учитывает как суммарную "массу" (∑r³), так и RMS расстояние капель от центра масс
     double r_eff;
     
+    // Суммарные силы всех капель в узле (для расчета конвективной скорости)
+    double total_fx, total_fy, total_fz;
+    
     // Количество капель в узле
     int count;
     
@@ -45,16 +48,18 @@ struct OctreeNode {
     OctreeNode() : min_x(0), min_y(0), min_z(0), 
                    max_x(0), max_y(0), max_z(0),
                    center_x(0), center_y(0), center_z(0),
-                   total_mass(0), avg_radius(0), r_eff(0), count(0), 
-                   is_leaf(true) {}
+                   total_mass(0), avg_radius(0), r_eff(0),
+                   total_fx(0), total_fy(0), total_fz(0),
+                   count(0), is_leaf(true) {}
     
     OctreeNode(double minx, double miny, double minz, 
                double maxx, double maxy, double maxz)
         : min_x(minx), min_y(miny), min_z(minz),
           max_x(maxx), max_y(maxy), max_z(maxz),
           center_x(0), center_y(0), center_z(0),
-          total_mass(0), avg_radius(0), r_eff(0), count(0),
-          is_leaf(true) {}
+          total_mass(0), avg_radius(0), r_eff(0),
+          total_fx(0), total_fy(0), total_fz(0),
+          count(0), is_leaf(true) {}
     
     // Получить размер узла
     inline double getSize() const {

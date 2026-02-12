@@ -1,59 +1,51 @@
 #ifndef DROPLET_H
 #define DROPLET_H
 
-#include <array>
 #include <ostream>
 
 /**
- * @brief Представляет одну каплю в симуляции
+ * @brief Одна капля в симуляции электрокоалесценции
  *
- * Содержит информацию о положении, дипольных силах и радиусе
- * Оптимизировано для кэш-дружественного расположения памяти
- * Использует передемпфированную динамику (без инерции)
+ * Содержит положение, дипольные силы, конвективную скорость и радиус.
+ * Оптимизировано для кэш-дружественного расположения в памяти.
+ * Используется overdamped-динамика (без инерции).
  */
 struct Droplet {
-    // Положение (x, y, z)
-    double x, y, z;
+    // Положение
+    double x = 0, y = 0, z = 0;
     
-    // Аккумулятор сил (fx, fy, fz) - дипольные силы
-    double fx, fy, fz;
+    // Аккумулятор дипольных сил
+    double fx = 0, fy = 0, fz = 0;
+    
+    // Конвективная скорость (стокслет)
+    double ux = 0, uy = 0, uz = 0;
     
     // Радиус капли
-    double radius;
+    double radius = 0;
     
-    /**
-     * @brief Конструктор по умолчанию
-     */
-    Droplet() : x(0), y(0), z(0), fx(0), fy(0), fz(0), radius(0) {}
+    Droplet() = default;
     
-    /**
-     * @brief Конструктор с параметрами
-     * @param x_, y_, z_ Координаты положения
-     * @param radius_ Радиус капли
-     */
-    Droplet(double x_, double y_, double z_, double radius_)
-        : x(x_), y(y_), z(z_), fx(0), fy(0), fz(0), radius(radius_) {}
+    Droplet(double x, double y, double z, double radius)
+        : x(x), y(y), z(z), radius(radius) {}
     
-    /**
-     * @brief Сбросить аккумуляторы сил
-     */
-    inline void resetForce() {
-        fx = fy = fz = 0.0;
-    }
+    void resetForce() { fx = fy = fz = 0; }
+    void resetConvection() { ux = uy = uz = 0; }
     
-    /**
-     * @brief Рассчитать квадрат расстояния до другой капли
-     * @param other Другая капля
-     * @return Квадрат расстояния между каплями
-     */
-    inline double distanceSquared(const Droplet& other) const {
+    /** @brief Квадрат расстояния до другой капли */
+    double distanceSquared(const Droplet& other) const {
         double dx = other.x - x;
         double dy = other.y - y;
         double dz = other.z - z;
-        return dx*dx + dy*dy + dz*dz;
+        return dx * dx + dy * dy + dz * dz;
     }
     
-    friend std::ostream& operator<<(std::ostream& os, const Droplet& d);
+    friend std::ostream& operator<<(std::ostream& os, const Droplet& d) {
+        os << "Droplet(pos=[" << d.x << ", " << d.y << ", " << d.z
+           << "], r=" << d.radius
+           << ", F=[" << d.fx << ", " << d.fy << ", " << d.fz
+           << "], u=[" << d.ux << ", " << d.uy << ", " << d.uz << "])";
+        return os;
+    }
 };
 
 #endif // DROPLET_H

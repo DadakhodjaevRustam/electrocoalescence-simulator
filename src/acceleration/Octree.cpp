@@ -1,5 +1,6 @@
 #include "acceleration/Octree.h"
 #include "core/DropletSystem.h"
+#include "solvers/StokesletCalculator.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -20,39 +21,49 @@ void Octree::build(DropletSystem& system, int max_droplets_per_leaf) {
     auto& droplets = system.getDroplets();
     if (droplets.empty()) return;
     
-    // Находим ограничивающий параллелепипед
-    double min_x = std::numeric_limits<double>::max();
-    double min_y = std::numeric_limits<double>::max();
-    double min_z = std::numeric_limits<double>::max();
-    double max_x = std::numeric_limits<double>::lowest();
-    double max_y = std::numeric_limits<double>::lowest();
-    double max_z = std::numeric_limits<double>::lowest();
+    double min_x, min_y, min_z, max_x, max_y, max_z;
     
-    for (const auto& d : droplets) {
-        min_x = std::min(min_x, d.x);
-        min_y = std::min(min_y, d.y);
-        min_z = std::min(min_z, d.z);
-        max_x = std::max(max_x, d.x);
-        max_y = std::max(max_y, d.y);
-        max_z = std::max(max_z, d.z);
+    if (use_pbc && box_lx > 0 && box_ly > 0 && box_lz > 0) {
+        // При PBC фиксируем bounding box как [-L/2, L/2]³
+        // Это гарантирует корректное построение дерева при периодических условиях
+        min_x = -box_lx / 2.0;
+        min_y = -box_ly / 2.0;
+        min_z = -box_lz / 2.0;
+        max_x =  box_lx / 2.0;
+        max_y =  box_ly / 2.0;
+        max_z =  box_lz / 2.0;
+    } else {
+        // Без PBC: находим ограничивающий параллелепипед по реальным координатам
+        min_x = std::numeric_limits<double>::max();
+        min_y = std::numeric_limits<double>::max();
+        min_z = std::numeric_limits<double>::max();
+        max_x = std::numeric_limits<double>::lowest();
+        max_y = std::numeric_limits<double>::lowest();
+        max_z = std::numeric_limits<double>::lowest();
+        
+        for (const auto& d : droplets) {
+            min_x = std::min(min_x, d.x);
+            min_y = std::min(min_y, d.y);
+            min_z = std::min(min_z, d.z);
+            max_x = std::max(max_x, d.x);
+            max_y = std::max(max_y, d.y);
+            max_z = std::max(max_z, d.z);
+        }
+
+        double padding = 0.01 * std::max({max_x - min_x, max_y - min_y, max_z - min_z});
+        min_x -= padding;
+        min_y -= padding;
+        min_z -= padding;
+        max_x += padding;
+        max_y += padding;
+        max_z += padding;
     }
-
-    double padding = 0.01 * std::max({max_x - min_x, max_y - min_y, max_z - min_z});
-    min_x -= padding;
-    min_y -= padding;
-    min_z -= padding;
-    max_x += padding;
-    max_y += padding;
-    max_z += padding;
     
-
     root = std::make_unique<OctreeNode>(min_x, min_y, min_z, max_x, max_y, max_z);
     
-
     for (size_t i = 0; i < droplets.size(); ++i) {
         insertDroplet(root.get(), i, droplets[i], system, max_droplets_per_leaf, 0);
     }
-    // TODO: рассмотреть расчет через приведенный радиус вместо центра масс
     // Вычисляем распределение массы (центр масс, суммарная масса)
     computeMassDistribution(root.get(), system);
 }
@@ -241,8 +252,72 @@ void Octree::calculateForces(DropletSystem& system, const DipoleForceCalculator&
     }
 }
 
+/**
+ * @brief Вычислить суммарные силы для всех узлов дерева
+ * 
+ * Рекурсивно вычисляет суммарную силу (total_fx, total_fy, total_fz) 
+ * для каждого узла октодерева. Это нужно для быстрой аппроксимации 
+ * конвективной скорости без повторного суммирования.
+ */
+void Octree::computeTotalForces(OctreeNode* node, const DropletSystem& system) {
+    if (!node) return;
+    
+    const auto& droplets = system.getDroplets();
+    
+    if (node->is_leaf) {
+        // Для листа суммируем силы напрямую
+        node->total_fx = 0;
+        node->total_fy = 0;
+        node->total_fz = 0;
+        
+        for (int idx : node->droplet_indices) {
+            node->total_fx += droplets[idx].fx;
+            node->total_fy += droplets[idx].fy;
+            node->total_fz += droplets[idx].fz;
+        }
+    } else {
+        // Для внутреннего узла суммируем из детей
+        node->total_fx = 0;
+        node->total_fy = 0;
+        node->total_fz = 0;
+        
+        for (auto& child : node->children) {
+            if (child && child->count > 0) {
+                computeTotalForces(child.get(), system);
+                node->total_fx += child->total_fx;
+                node->total_fy += child->total_fy;
+                node->total_fz += child->total_fz;
+            }
+        }
+    }
+}
+
+/**
+ * @brief Рассчитать конвективные скорости используя октодерево
+ * 
+ * Аналогично calculateForces, но для стокслета.
+ * Использует те же принципы аппроксимации дальних взаимодействий.
+ */
+void Octree::calculateConvectionVelocities(DropletSystem& system, const StokesletCalculator& calculator) {
+    auto& droplets = system.getDroplets();
+    
+    // ОПТИМИЗАЦИЯ: Предварительно вычисляем суммарные силы для всех узлов
+    // Это делается один раз, вместо повторного суммирования для каждой капли
+    computeTotalForces(root.get(), system);
+    
+    for (size_t i = 0; i < droplets.size(); ++i) {
+        double ux = 0, uy = 0, uz = 0;
+        calculateConvectionOnDroplet(i, droplets[i], root.get(), system, calculator, ux, uy, uz);
+        
+        // Накопление конвективных скоростей
+        droplets[i].ux += ux;
+        droplets[i].uy += uy;
+        droplets[i].uz += uz;
+    }
+}
+
 bool Octree::shouldOpen(const OctreeNode* node, double dx, double dy, double dz) const {
-    // Критерий theta Барнса-Хата
+    // Критерий theta Барнса-Хата для дипольных сил
     // Критерий: size/distance < theta
     // Вычисляем напрямую через sqrt для точности
     
@@ -270,6 +345,7 @@ bool Octree::shouldOpen(const OctreeNode* node, double dx, double dy, double dz)
     
     return true; // Открыть узел (нужна большая детализация)
 }
+
 
 void Octree::calculateForceOnDroplet(int droplet_idx, const Droplet& droplet,
                                       const OctreeNode* node,
@@ -386,12 +462,111 @@ void Octree::calculateForceOnDroplet(int droplet_idx, const Droplet& droplet,
     }
 }
 
+/**
+ * @brief Рассчитать конвективную скорость от узла октодерева на каплю
+ * 
+ * Рекурсивно обходит октодерево и рассчитывает вклад в конвективную скорость.
+ * Использует критерий theta для аппроксимации дальних кластеров капель.
+ * 
+ * Физика: u_i = Σ_j J(r_ij) · F_j, где J - тензор стокслета
+ * Аппроксимация: для дальних кластеров используем центр масс и суммарную силу
+ */
+void Octree::calculateConvectionOnDroplet(int droplet_idx, const Droplet& droplet,
+                                           const OctreeNode* node,
+                                           const DropletSystem& system,
+                                           const StokesletCalculator& calculator,
+                                           double& ux, double& uy, double& uz) const {
+    if (!node || node->count == 0) return;
+    
+    double dx = node->center_x - droplet.x;
+    double dy = node->center_y - droplet.y;
+    double dz = node->center_z - droplet.z;
+    
+    // Применяем периодические граничные условия к разности координат
+    double dx_pbc = dx, dy_pbc = dy, dz_pbc = dz;
+    if (use_pbc) {
+        PhysicsConstants::applyPeriodicBoundary(dx_pbc, dy_pbc, dz_pbc, box_lx, box_ly, box_lz);
+    }
+    
+    // Проверяем, можно ли аппроксимировать этот узел (единый критерий theta)
+    if (!shouldOpen(node, dx_pbc, dy_pbc, dz_pbc)) {
+        // Узел достаточно далеко → аппроксимируем
+        
+        // КРИТИЧЕСКОЕ: Проверяем, не содержит ли узел текущую каплю
+        // ВАЖНО: При ПГУ нельзя использовать простую геометрическую проверку!
+        // Нужно проверять МИНИМАЛЬНОЕ расстояние с учетом периодичности
+        
+        double distance_to_node_center_sq = dx_pbc*dx_pbc + dy_pbc*dy_pbc + dz_pbc*dz_pbc;
+        double node_half_size = node->getSize() / 2.0;
+        double node_diag_sq = 3.0 * node_half_size * node_half_size;  // √3 * half_size = диагональ
+        
+        // Если расстояние до центра узла меньше диагонали узла, узел может содержать каплю
+        // Это консервативная оценка с учетом ПГУ
+        if (distance_to_node_center_sq < node_diag_sq) {
+            // Узел МОЖЕТ содержать текущую каплю → нельзя аппроксимировать!
+            // ИСПРАВЛЕНО: Явно НЕ делаем return, чтобы код продолжил выполнение
+            // и обработал узел через обычную логику (shouldOpen == true)
+            // Это эквивалентно "переоткрытию" узла для точного расчета
+        } else {
+            // Узел НЕ содержит текущую каплю → можно аппроксимировать!
+            // Аппроксимация: создаем эффективную каплю в центре масс кластера
+            // с суммарной силой всех капель в узле (ПРЕДВЫЧИСЛЕНО)
+            Droplet approx_droplet;
+            approx_droplet.x = node->center_x;
+            approx_droplet.y = node->center_y;
+            approx_droplet.z = node->center_z;
+            approx_droplet.radius = 0.0;  // ИСПРАВЛЕНО: радиус не используется в стокслете
+            
+            // ОПТИМИЗАЦИЯ: Используем предвычисленные суммарные силы
+            // Это гораздо быстрее, чем рекурсивное суммирование для каждой капли
+            approx_droplet.fx = node->total_fx;
+            approx_droplet.fy = node->total_fy;
+            approx_droplet.fz = node->total_fz;
+            
+            // Рассчитываем конвективную скорость от аппроксимированного кластера
+            auto velocity = calculator.calculateConvectionVelocity(droplet, approx_droplet);
+            
+            // Отслеживаем использование аппроксимации
+            approximated_interactions++;
+            
+            ux += velocity[0];
+            uy += velocity[1];
+            uz += velocity[2];
+            
+            return;  // ВАЖНО: Выходим только после аппроксимации!
+        }
+    }
+    
+    // shouldOpen == true → нужно открыть узел
+    
+    if (node->is_leaf) {
+        // Лист: рассчитываем конвективную скорость от всех капель напрямую
+        const auto& droplets = system.getDroplets();
+        
+        for (int j : node->droplet_indices) {
+            if (j != droplet_idx) {
+                auto velocity = calculator.calculateConvectionVelocity(droplet, droplets[j]);
+                ux += velocity[0];
+                uy += velocity[1];
+                uz += velocity[2];
+            }
+        }
+    } else {
+        // Внутренний узел: рекурсивно обрабатываем детей
+        for (const auto& child : node->children) {
+            if (child && child->count > 0) {
+                calculateConvectionOnDroplet(droplet_idx, droplet, child.get(),
+                                            system, calculator, ux, uy, uz);
+            }
+        }
+    }
+}
+
 
 
 void Octree::clear() {
     root.reset();
 }
-// TODO: уточнить, нужна ли очистка статистики здесь
 void Octree::resetStatistics() {
     approximated_interactions = 0;
 }
@@ -417,7 +592,6 @@ size_t Octree::getMaxDepth() const {
     computeMaxDepth(root.get(), 0, max_depth);
     return max_depth;
 }
-// TODO: при необходимости перенести расчет глубины в основной код
 void Octree::computeMaxDepth(const OctreeNode* node, int depth, size_t& max_depth) const {
     if (!node) return;
     max_depth = std::max(max_depth, static_cast<size_t>(depth));
@@ -476,7 +650,6 @@ void Octree::saveTreeToCSV(const std::string& filename) const {
     file.close();
     std::cout << "Структура октодерева сохранена в " << filename << std::endl;
 }
-// TODO: при необходимости перенести в основной код
 void Octree::saveTreeToPLY(const std::string& filename) const {
     // Формируем корректный ASCII PLY с цветами на вершинах.
     // Каждый узел октодерева визуализируется кубом: 8 вершин + 12 треугольников.

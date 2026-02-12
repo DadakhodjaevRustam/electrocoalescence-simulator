@@ -36,3 +36,8 @@ cmake_install.cmake
 # Misc
 *.log
 
+
+CONVECTION_IMPLEMENTATION_PLAN.md
+OCTREE_EXPLAINED.md
+
+.gitignore

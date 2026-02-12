@@ -1,6 +1,7 @@
 #include "initializers/ClusterInitializer.h"
 #include <random>
 #include <cmath>
+#include <numbers>
 #include <algorithm>
 #include <iostream>
 
@@ -18,7 +19,7 @@ void ClusterInitializer::createCompactCluster(
     unsigned int seed) {
     
     std::mt19937 gen(seed);
-    std::uniform_real_distribution<double> angle_dist(0, 2 * M_PI);
+    std::uniform_real_distribution<double> angle_dist(0, 2.0 * std::numbers::pi);
     std::uniform_real_distribution<double> height_dist(-1, 1);
     
     std::vector<Droplet> cluster_droplets;
@@ -112,11 +113,12 @@ double ClusterInitializer::calculateEffectiveRadius(const std::vector<Droplet>& 
     double total_volume = 0.0;
     
     for (const auto& droplet : droplets) {
-        total_volume += (4.0/3.0) * M_PI * std::pow(droplet.radius, 3);
+        double r = droplet.radius;
+        total_volume += (4.0/3.0) * std::numbers::pi * r * r * r;
     }
     
     // Радиус сферы с эквивалентным объемом
-    return std::pow(3.0 * total_volume / (4.0 * M_PI), 1.0/3.0);
+    return std::cbrt(3.0 * total_volume / (4.0 * std::numbers::pi));
 }
 
 /**
@@ -127,7 +129,8 @@ std::array<double, 3> ClusterInitializer::calculateCenterOfMass(const std::vecto
     double center_x = 0.0, center_y = 0.0, center_z = 0.0;
     
     for (const auto& droplet : droplets) {
-        double mass = std::pow(droplet.radius, 3); // Масса ~ объем ~ r³
+        double r = droplet.radius;
+        double mass = r * r * r;  // Масса ~ объем ~ r³
         center_x += mass * droplet.x;
         center_y += mass * droplet.y;
         center_z += mass * droplet.z;
@@ -155,7 +158,7 @@ std::vector<std::array<double, 3>> ClusterInitializer::generateSpherePoints(
         double u = u_dist(gen);
         double v = u_dist(gen);
         
-        double theta = 2 * M_PI * u;
+        double theta = 2.0 * std::numbers::pi * u;
         double phi = std::acos(2 * v - 1);
         
         double x = radius * std::sin(phi) * std::cos(theta);

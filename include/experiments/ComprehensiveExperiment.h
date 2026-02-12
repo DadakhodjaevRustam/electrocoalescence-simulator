@@ -3,7 +3,7 @@
 
 #include "core/DropletSystem.h"
 #include "initializers/ClusterInitializer.h"
-#include "solvers/NaiveForceSolver.h"
+#include "solvers/HonestForceSolver.h"
 #include "acceleration/Octree.h"
 #include "solvers/DipoleForceCalculator.h"
 #include <vector>
@@ -21,9 +21,9 @@ struct ExperimentResult {
     std::array<double, 3> direction;
     
     // Результаты измерений сил
-    double force_magnitude_naive;      // Точный расчет
-    double force_magnitude_octree;     // Аппроксимация
-    std::array<double, 3> force_naive;
+    double force_magnitude_honest;     // Точный расчёт (честный O(N²))
+    double force_magnitude_octree;     // Аппроксимация (октодерево)
+    std::array<double, 3> force_honest;
     std::array<double, 3> force_octree;
     
     // Метрики ошибок
@@ -32,7 +32,7 @@ struct ExperimentResult {
     std::array<double, 3> component_errors; // Ошибки по компонентам
     
     // Производительность
-    double naive_time_ms;
+    double honest_time_ms;
     double octree_time_ms;
     double speedup_factor;
     
@@ -155,20 +155,6 @@ private:
         const std::array<double, 3>& force_exact,
         const std::array<double, 3>& force_approx);
     
-    /**
-     * @brief Получить статистику октодерева
-     * @param system Система капель
-     * @return Статистика (узлы, глубина, аппроксимации)
-     */
-    static std::tuple<size_t, size_t, size_t> getOctreeStatistics(
-        const DropletSystem& system);
-    
-    /**
-     * @brief Проверить использовалась ли аппроксимация
-     * @param system Система капель
-     * @return true если была аппроксимация
-     */
-    static bool checkIfApproximationUsed(const DropletSystem& system);
 };
 
 #endif // COMPREHENSIVE_EXPERIMENT_H

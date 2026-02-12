@@ -37,49 +37,12 @@ public:
      * @param i Капля i
      * @param j Капля j
      * @return Сила на каплю i от капли j (fx, fy, fz)
+     * 
+     * При столкновении возвращает нулевую силу.
      */
     inline std::array<double, 3> calculateForce(const Droplet& i, const Droplet& j) const {
-        // Разности координат
-        double dx = j.x - i.x;
-        double dy = j.y - i.y;
-        double dz = j.z - i.z;
-        
-        // Применяем периодические граничные условия, если они включены
-        if (use_pbc) {
-            PhysicsConstants::applyPeriodicBoundary(dx, dy, dz, box_lx, box_ly, box_lz);
-        }
-        
-        // Расстояние
-        double r_squared = dx*dx + dy*dy + dz*dz;
-        double r_mag = std::sqrt(r_squared);
-        
-// Проверка столкновения и очень маленьких расстояний
-        double r_sum = i.radius + j.radius;
-        if (r_mag <= r_sum || r_mag < 1e-15) {
-            // Возвращаем нулевую силу при столкновении или слишком малом расстоянии
-            return {0.0, 0.0, 0.0};
-        }
-        
-        // Расчет коэффициента силы
-        // M * r_i^3 * r_j^3 / r^7
-        // ИСПРАВЛЕНО: r_squared^3 = r^6, не r^7! Нужно умножить на r_mag
-        double r7 = r_squared * r_squared * r_squared * r_mag;  // r^7 = r^6 * r
-        double radii_product = std::pow(i.radius, 3) * std::pow(j.radius, 3);
-        double M_ik_per_r7 = m_const * radii_product / r7;
-        
-        // Квадраты компонент
-        double dx_squared = dx * dx;
-        double dy_squared = dy * dy;
-        double dz_squared = dz * dz;
-        
-        // Компоненты силы
-        double force_xy_per_delta = M_ik_per_r7 * (4.0 * dz_squared - dx_squared - dy_squared);
-        
-        double fx = force_xy_per_delta * dx;
-        double fy = force_xy_per_delta * dy;
-        double fz = M_ik_per_r7 * (2.0 * dz_squared - 3.0 * dx_squared - 3.0 * dy_squared) * dz;
-        
-        return {fx, fy, fz};
+        auto [force, collision] = calculateForceImpl(i, j);
+        return force;
     }
     
     /**
@@ -88,12 +51,24 @@ public:
      */
     inline std::pair<std::array<double, 3>, bool> calculateForceWithCollisionCheck(
         const Droplet& i, const Droplet& j) const {
+        return calculateForceImpl(i, j);
+    }
+    
+private:
+    /**
+     * @brief Единая реализация расчёта дипольной силы
+     * @return пара (сила, есть_столкновение)
+     * 
+     * F_xy = M · ri³ · rj³ / r⁷ · (4dz² - dx² - dy²) · d{x,y}
+     * F_z  = M · ri³ · rj³ / r⁷ · (2dz² - 3dx² - 3dy²) · dz
+     */
+    inline std::pair<std::array<double, 3>, bool> calculateForceImpl(
+        const Droplet& i, const Droplet& j) const {
         
         double dx = j.x - i.x;
         double dy = j.y - i.y;
         double dz = j.z - i.z;
         
-        // Применяем периодические граничные условия, если они включены
         if (use_pbc) {
             PhysicsConstants::applyPeriodicBoundary(dx, dy, dz, box_lx, box_ly, box_lz);
         }
@@ -101,27 +76,31 @@ public:
         double r_squared = dx*dx + dy*dy + dz*dz;
         double r_mag = std::sqrt(r_squared);
         
+        // Столкновение или слишком малое расстояние
         double r_sum = i.radius + j.radius;
-        if (r_mag <= r_sum) {
-            return {{0.0, 0.0, 0.0}, true};
+        if (r_mag <= r_sum || r_mag < 1e-15) {
+            return {{0.0, 0.0, 0.0}, (r_mag <= r_sum)};
         }
         
-        double r7 = std::pow(r_mag, 7);
-        double radii_product = std::pow(i.radius, 3) * std::pow(j.radius, 3);
-        double M_ik_per_r7 = m_const * radii_product / r7;
+        // r⁷ = r⁶ · r  (быстрее чем std::pow(r, 7))
+        double r7 = r_squared * r_squared * r_squared * r_mag;
+        double ri3 = i.radius * i.radius * i.radius;
+        double rj3 = j.radius * j.radius * j.radius;
+        double M_per_r7 = m_const * ri3 * rj3 / r7;
         
-        double dx_squared = dx * dx;
-        double dy_squared = dy * dy;
-        double dz_squared = dz * dz;
+        double dx2 = dx * dx;
+        double dy2 = dy * dy;
+        double dz2 = dz * dz;
         
-        double force_xy_per_delta = M_ik_per_r7 * (4.0 * dz_squared - dx_squared - dy_squared);
+        double coeff_xy = M_per_r7 * (4.0 * dz2 - dx2 - dy2);
         
-        double fx = force_xy_per_delta * dx;
-        double fy = force_xy_per_delta * dy;
-        double fz = M_ik_per_r7 * (2.0 * dz_squared - 3.0 * dx_squared -3.0 * dy_squared) * dz;
-        
-        return {{fx, fy, fz}, false};
+        return {{coeff_xy * dx,
+                 coeff_xy * dy,
+                 M_per_r7 * (2.0 * dz2 - 3.0 * dx2 - 3.0 * dy2) * dz},
+                false};
     }
+    
+public:
     
     void setConstant(double m) { m_const = m; }
     double getConstant() const { return m_const; }

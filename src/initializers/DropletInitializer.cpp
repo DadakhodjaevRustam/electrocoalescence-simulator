@@ -1,6 +1,7 @@
 #include "initializers/DropletInitializer.h"
 #include <random>
 #include <cmath>
+#include <numbers>
 #include <iostream>
 #include <iomanip>
 
@@ -52,7 +53,7 @@ void DropletInitializer::initializeRandomCubeWithVolumeFraction(
     
     // Расчет среднего радиуса и объема капли
     double avg_radius = (min_radius + max_radius) / 2.0;
-    double avg_volume = (4.0 / 3.0) * M_PI * avg_radius * avg_radius * avg_radius;
+    double avg_volume = (4.0 / 3.0) * std::numbers::pi * avg_radius * avg_radius * avg_radius;
     
     // Расчет размера куба по формуле: L = ³√(N × V_среднее / φ)
     double total_droplet_volume = n * avg_volume;
@@ -104,4 +105,7 @@ void DropletInitializer::initializeRandomCubeWithVolumeFraction(
     double actual_fraction = actual_volume / cube_volume;
     std::cout << "Фактическая объемная доля: " << std::scientific << std::setprecision(6) 
               << actual_fraction << "\n";
+    
+    // Устанавливаем размер бокса для PBC (домен [-cube_size/2, cube_size/2]³)
+    system.setBoxSize(cube_size, cube_size, cube_size);
 }
